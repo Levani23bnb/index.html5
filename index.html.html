@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcGenesis - NFT Market</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
+        
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background-color: #050505;
+            color: #e2e8f0;
+        }
+        .font-cyber { font-family: 'Orbitron', sans-serif; }
+        
+        /* ნეონის ეფექტები */
+        .neon-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+        }
+        .neon-box:hover {
+            border-color: rgba(6, 182, 212, 0.8);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+        }
+
+        /* ლოადერი */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #06b6d4;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 0 auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- ნავიგაცია -->
+    <nav class="border-b border-gray-800 bg-black/90 backdrop-blur sticky top-0 z-50">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-cyber text-cyan-400 tracking-wider">ArcMarket</h1>
+            <button id="connectBtn" onclick="connectWallet()" class="px-6 py-2 border border-cyan-500 text-cyan-400 rounded hover:bg-cyan-500/10 transition-all font-bold">
+                Connect Wallet
+            </button>
+        </div>
+    </nav>
+
+    <!-- მთავარი ნაწილი -->
+    <main class="container mx-auto px-6 py-12 space-y-16">
+
+        <!-- 1. CREATE NFT SECTION -->
+        <section id="create-section" class="max-w-xl mx-auto">
+            <div class="neon-box p-8 rounded-2xl backdrop-blur-md">
+                <h2 class="text-3xl font-cyber text-white mb-6 text-center">Create NFT</h2>
+                
+                <div class="space-y-5">
+                    <!-- სურათის ატვირთვა -->
+                    <div>
+                        <label class="block text-gray-400 mb-2 text-sm uppercase tracking-wide">Upload Image</label>
+                        <input type="file" id="imageInput" accept="image/*" class="block w-full text-sm text-gray-400
+                            file:mr-4 file:py-2 file:px-4
+                            file:rounded-full file:border-0
+                            file:text-sm file:font-semibold
+                            file:bg-cyan-900/50 file:text-cyan-400
+                            hover:file:bg-cyan-900
+                            cursor-pointer bg-black/50 rounded-lg border border-gray-700 p-2
+                        "/>
+                    </div>
+
+                    <!-- სახელი -->
+                    <div>
+                        <label class="block text-gray-400 mb-2 text-sm uppercase tracking-wide">NFT Name</label>
+                        <input type="text" id="nftName" placeholder="Enter NFT Name" class="w-full bg-black/50 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-cyan-500 transition-colors">
+                    </div>
+
+                    <!-- ფასი (USDC ვიზუალით) -->
+                    <div>
+                        <label class="block text-gray-400 mb-2 text-sm uppercase tracking-wide">Price (USDC)</label>
+                        <div class="relative">
+                            <input type="number" id="nftPrice" placeholder="0.00" step="0.01" class="w-full bg-black/50 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-cyan-500 transition-colors pl-4">
+                            <span class="absolute right-4 top-3 text-gray-500 text-sm font-bold text-cyan-500">USDC</span>
+                        </div>
+                    </div>
+
+                    <!-- ლოადერი -->
+                    <div id="mintLoader" class="loader"></div>
+
+                    <!-- ღილაკი -->
+                    <button onclick="createAndPublish()" class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                        Publish to Marketplace
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. MARKETPLACE GRID -->
+        <section>
+            <h3 class="text-2xl font-cyber text-white mb-8 border-b border-gray-800 pb-4">Live Mints</h3>
+            
+            <div id="nftGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- აქ ჩაიტვირთება ქარდები -->
+                <div class="text-gray-500 col-span-full text-center py-10">Connect wallet to view NFTs...</div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // ✅ შენი კონფიგურაცია
+        const IMGBB_API_KEY = "63d767175510660601c37b75569477e6"; 
+        
+        // 🔹 შენი მითითებული მისამართები
+        const marketplaceAddress = "0x8e6fD58c5FB124BB884BF2888a3D826Fdb302C1F";
+        const usdcAddress = "0x3600000000000000000000000000000000000000";
+
+        // 🔹 შენი მარკეტპლეისის ABI
+        const marketplaceABI = [
+            "function createToken(string memory tokenURI, uint256 price) public payable returns (uint)",
+            "function getAllNFTs() public view returns (tuple(uint256 tokenId, address seller, address owner, uint256 price, bool sold, string tokenURI)[])",
+            "function buyItem(uint256 tokenId) public payable"
+        ];
+
+        let provider, signer, contract;
+        let isConnected = false;
+
+        // 1. საფულის დაკავშირება
+        async function connectWallet() {
+            if (window.ethereum) {
+                try {
+                    provider = new ethers.providers.Web3Provider(window.ethereum);
+                    await provider.send("eth_requestAccounts", []);
+                    signer = provider.getSigner();
+                    const address = await signer.getAddress();
+                    
+                    document.getElementById("connectBtn").innerText = address.slice(0,6) + "..." + address.slice(-4);
+                    document.getElementById("connectBtn").className = "px-6 py-2 border border-green-500 text-green-400 rounded font-bold";
+                    isConnected = true;
+                    
+                    contract = new ethers.Contract(marketplaceAddress, marketplaceABI, signer);
+                    console.log("Contract Connected:", marketplaceAddress);
+                    
+                    loadNFTs();
+                } catch (err) {
+                    alert("Connection failed!");
+                    console.error(err);
+                }
+            } else {
+                alert("Please install Metamask!");
+            }
+        }
+
+        // 2. სურათის ატვირთვა
+        async function uploadImage(file) {
+            const formData = new FormData();
+            formData.append("image", file);
+            
+            try {
+                let res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                    method: "POST", body: formData
+                });
+                let data = await res.json();
+                return data.data.url;
+            } catch (err) {
+                console.error(err);
+                alert("Image upload failed");
+                return null;
+            }
+        }
+
+        // 3. CREATE & PUBLISH (შექმნა)
+        async function createAndPublish() {
+            if (!isConnected) return alert("Connect Wallet first!");
+            
+            const fileInput = document.getElementById("imageInput");
+            const name = document.getElementById("nftName").value;
+            const priceVal = document.getElementById("nftPrice").value;
+
+            if (!fileInput.files[0] || !name || !priceVal) return alert("Please fill all fields!");
+
+            const loader = document.getElementById("mintLoader");
+            loader.style.display = "block";
+
+            try {
+                // ატვირთვა
+                const imageUrl = await uploadImage(fileInput.files[0]);
+                if (!imageUrl) throw new Error("Image upload failed");
+
+                // ფასის კონვერტაცია (Wei)
+                const priceWei = ethers.utils.parseEther(priceVal.toString());
+                
+                // Listing Fee (თუ კონტრაქტი ითხოვს, მაგ. 0.0025 ARC)
+                // თუ ეს არ ჭირდება, შეგიძლია parseEther("0") დაწერო
+                const listingFee = ethers.utils.parseEther("0.0025"); 
+
+                console.log("Creating Token:", imageUrl, priceVal);
+
+                const tx = await contract.createToken(imageUrl, priceWei, { value: listingFee });
+                await tx.wait();
+
+                alert("NFT Successfully Published! 🚀");
+                
+                document.getElementById("nftName").value = "";
+                document.getElementById("nftPrice").value = "";
+                fileInput.value = "";
+                
+                loadNFTs();
+
+            } catch (err) {
+                console.error("Mint Error:", err);
+                // დეტალური ერორის გამოტანა
+                if (err.data && err.data.message) alert("Error: " + err.data.message);
+                else alert("Error: " + err.message);
+            } finally {
+                loader.style.display = "none";
+            }
+        }
+
+        // 4. ჩატვირთვა
+        async function loadNFTs() {
+            if (!contract) return;
+
+            try {
+                const items = await contract.getAllNFTs();
+                const grid = document.getElementById("nftGrid");
+                grid.innerHTML = "";
+
+                if (items.length === 0) {
+                    grid.innerHTML = '<div class="text-gray-500 col-span-full text-center">No NFTs found. Create one!</div>';
+                    return;
+                }
+
+                items.forEach(item => {
+                    if (item.sold) return;
+
+                    const priceDisplay = ethers.utils.formatEther(item.price);
+
+                    const html = `
+                        <div class="neon-box rounded-xl overflow-hidden flex flex-col group bg-black">
+                            <div class="h-64 overflow-hidden relative">
+                                <img src="${item.tokenURI}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                     onerror="this.src='https://via.placeholder.com/400x400?text=No+Image'">
+                            </div>
+                            
+                            <div class="p-4 flex flex-col gap-3">
+                                <div class="flex justify-between items-start">
+                                    <h4 class="text-white font-bold truncate pr-2">NFT #${item.tokenId}</h4>
+                                    <span class="text-cyan-400 font-cyber font-bold">${priceDisplay} USDC</span>
+                                </div>
+                                
+                                <button onclick="mintItem('${item.tokenId}', '${priceDisplay}')" 
+                                    class="w-full py-2 bg-white text-black font-bold rounded hover:bg-cyan-400 transition-colors uppercase tracking-wider text-sm mt-2">
+                                    MINT NOW
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    grid.innerHTML += html;
+                });
+
+            } catch (err) {
+                console.error("Load error:", err);
+            }
+        }
+
+        // 5. MINT / BUY ფუნქცია
+        async function mintItem(tokenId, priceEth) {
+            if (!isConnected) return alert("Connect Wallet!");
+
+            try {
+                // 🛑 აქ ვაგზავნით Native Token-ს (Value), რადგან კონტრაქტი ამას ითხოვს
+                // თუ შენ ოდესმე კონტრაქტს შეცვლი USDC-ზე, ეს ნაწილი უნდა შეიცვალოს
+                const priceWei = ethers.utils.parseEther(priceEth);
+                
+                const btn = event.target;
+                const oldText = btn.innerText;
+                btn.innerText = "PROCESSING...";
+                btn.disabled = true;
+
+                console.log("Buying Item:", tokenId, priceEth);
+
+                // { value: priceWei } არის გადამწყვეტი შენი კონტრაქტისთვის
+                const tx = await contract.buyItem(tokenId, { value: priceWei });
+                await tx.wait();
+
+                alert("Success! You minted this NFT! 🎉");
+                loadNFTs();
+
+            } catch (err) {
+                console.error("Buy Error:", err);
+                
+                if (err.data && err.data.message) {
+                     alert("Error: " + err.data.message);
+                } else if (err.message.includes("insufficient funds")) {
+                     alert("არასაკმარისი ბალანსი (ARC)!");
+                } else {
+                     alert("Transaction Failed: " + err.message);
+                }
+                
+                // ღილაკის აღდგენა
+                event.target.innerText = "MINT NOW";
+                event.target.disabled = false;
+            }
+        }
+        
+        // ავტო-კავშირი (სურვილისამებრ)
+        // setTimeout(() => { if(window.ethereum) connectWallet(); }, 1000);
+    </script>
+</body>
+</html>
